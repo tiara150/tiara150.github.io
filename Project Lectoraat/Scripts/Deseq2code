@@ -1,0 +1,9 @@
+# Run DESeq 
+dds <- DESeq(dds)
+# Store DESeq results in a new object
+res <- results(dds)
+# Store a subset of results in a new object, in this case, the ones with an adjusted p-value of < 0.05
+res_sig <- subset(res, padj<.05)
+# Out of the subset we created above, subset the results that changed between conditions
+res_lfc <- subset(res_sig, abs(log2FoldChange) > 1) 
+head(res_lfc)

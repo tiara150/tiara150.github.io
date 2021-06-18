@@ -1,0 +1,15 @@
+dir <- system.file("extdata/salmon_dm", package="tximportData")
+files <- file.path(dir, "SRR1197474", "quant.sf") 
+file.exists(files)
+## [1] TRUE
+
+coldata <- data.frame(files, names="SRR1197474", condition="A", stringsAsFactors=FALSE)
+coldata
+##                                                                                    files
+## 1 /home/biocbuild/bbs-3.13-bioc/R/library/tximportData/extdata/salmon_dm/SRR1197474/quant.sf
+##        names condition
+## 1 SRR1197474         A
+
+Running tximeta:
+library(tximeta)
+se <- tximeta(coldata)

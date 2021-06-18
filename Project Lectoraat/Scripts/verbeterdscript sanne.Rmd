@@ -1,0 +1,386 @@
+---
+title: "Werkend script sanne"
+author: "Claudia van der Zijden"
+date: "18/05/2021"
+output: html_document
+---
+---
+title: "Eindverslag_dashboard"
+author: "Thomas Baardemans, Sanne Schild, Jelmer Oedzes, Marc Teunis"
+date: "9-1-2021"
+output: pdf_document
+subtitle: '*Using GSE150646 to test the code, currentlt working on csv files*'
+params:
+  data1: dev_stage
+  data2: genotype
+  geo_dataset: GSE150646
+word_document:
+  highlight: pygments
+  number_sections: yes
+  theme: cosmo
+  toc: yes
+  toc_depth: 3
+  toc_float:
+    collapsed: yes
+    smooth_scroll: yes
+  toc_title: Table of Contents
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, include = TRUE)
+```
+
+##Introduction
+
+Hier hebben we het over het doel van het experiment
+We hebben de code op sommige plekken een beetje aangepast, zodat in het verslag ook te zien is wat er gebeurd.
+In dit verslag lopen we langs alle stappen van de Hardcode (hierboven uitgelegd). Per "code chunk" wordt uitgelegd wat de functie/werking/doel is. 
+
+Differential expression analysis
+This analysis used the DESeq2 workflow by Love et al., 2014(^ Love, M.I., Huber, W. & Anders, S. Moderated estimation of fold change and dispersion for RNA-seq data with DESeq2. Genome Biol 15, 550 (2014). https://doi.org/10.1186/s13059-014-0550-8)
+
+loading libraries and setting root 
+Alle functies zijn opgeslagen in library's deze moeten we dus eerst downloaden en ophalen.
+```{r eval=FALSE, include=FALSE}
+#install libraries if not installed
+#require("tidyverse") || utils::install.packages("tidyverse")
+#require("rprojroot") || utils::install.packages("rprojroot")
+#require("pheatmap") || utils::install.packages("pheatmap")
+#require("edgeR") || utils::install.packages("edgeR")
+#require("dplyr") || utils::install.packages("dplyr")
+#BiocManager::install("Biostrings")
+#BiocManager::install("biomaRt")
+#BiocManager::install("GEOquery")
+#BiocManager::install("rnaseqGene")
+#BiocManager::install("msa")
+#BiocManager::install("iSEE")
+#install.packages("bookdown")
+#BiocManager::install("apeglm")
+```
+
+```{r include=FALSE}
+#load libraries
+library(bookdown)
+library(tidyverse)
+library(rprojroot)
+library(Biostrings)
+library(biomaRt)
+library(GEOquery)
+#library(rnaseqGene)
+library(pheatmap)
+library(msa)
+library(iSEE)
+library(edgeR)
+library(dplyr)
+library(DESeq2)
+library(readr)
+library(apeglm)
+```
+
+uitleggen
+```{r}
+#find the root file
+root <- find_root_file(criterion = is_rstudio_project)
+```
+
+We leggen voor elk stukje code uit wat er gebeurd en waarom.
+De code is zo opgedeeld dat elk stukje code uitgelegd kan worden, en gevisualiseerd.
+
+##The hardcode - the beta version of the dashboard
+### Get the first data of the experiment
+
+The research starts here, with the functions() below. The first steps are to collect the data of the experiment and the supplementary files (with the raw data inside).
+
+We first start with making a directory (WHY??) after that we make sure R knows what we want to work with. These are the params at the start of this document (geo_dataset, data1 and data2). When we have more experiments for "geo_dataset" we need to be able to split these experiments (so R won't read them as one big number) and the last step is to make each there own folder. 
+
+```{r first steps}
+
+#When there are more params the (function) "datasets" will split them
+datasets <- strsplit("GSE150646", split = " ") %>% unlist
+#With full_paths each parameter will be 
+full_paths <- file.path(here::here(), datasets)
+#Make maps for the different experiments inside geo_dataset
+purrr::walk(
+  full_paths,
+  dir.create)
+```
+
+
+Now that R knows with what kind of data we work, we can download the first set of data.
+We do this with the function “map2” the .x tells what data to look for and .y where to put it. The function getGEO does all the magic to get the data.
+
+```{r data_download_1}
+#download the data 
+data <- map2(
+  .x  = datasets,
+  .y = full_paths,
+  getGEO,
+  GSEMatrix = TRUE,
+  filename = NULL
+)
+```
+
+With  the first data, about the experiment, downloaded, it’s time to get the supplementary files (supp_files from now on). We use the same map2 function from before but now with the function “getGEOSuppFiles”. 
+
+```{r data_download_2}
+#Get supp files
+data_supp <- map2(
+  .x  = datasets,
+  .y = full_paths,
+  getGEOSuppFiles,
+  makeDirectory = FALSE, 
+  #baseDir = getwd(),
+  fetch_files = TRUE, 
+  filter_regex = NULL
+)
+```
+
+Now we’ve downloaded the experimental data (supp_files), we need to unpack them. Supp_files are often zipped or tarred, our next job is to unzip and or untar these files. First we’ll explain the untarring of files then after that the unzipping of the data.
+
+#### Untar the data.
+To untar the data we first need to tell R where to find the tarred files. We do this with the first line of code, this contains the location of the files, with pattern we only select the tarred files.
+We tell the map function with .x where to look for the tarred data and with .f to untar these files.
+The last thing we tell map to do is making a new folder. We do this with exdir, this is needed because in a tarred file there are often several smaller files, they need a place to go.
+
+Because  the location is now different, we made an unzip function inside the untar code chunk.
+```{r Untar files werkt wel maar files zijn niet tared of hij heeft het al gedaan}
+#To untar more files (from different geo_datasets doesn't work yet)
+files_tar <- list.files(path = "GSE150646")
+untarr <- map(
+  .x = files_tar,
+  .f = untar,
+)
+
+## Untarred files will be unzipped    ##voor nu gebruiken "Probleem"  normaal gebruiken > datasets (zonder "") (weet niet meer waarom dit er staat en of het is opgelost)
+list_for_unzipping <- list.files(path = "GSE150646")
+#lapply(list_for_unzipping, gunzip)
+```
+
+
+#### Unzipping of the downloaded data
+We start the same way as “untar the data”, we tell R where to find the zipped files and select them with the pattern “.gz”.
+The new map function will then unzip the files with function GEOquery::gunzip
+
+```{r Unzip files werkt wel maar kan niet herhaald worden als de bestanden al bestaan}
+files_zip <- list.files(path = "GSE150646", full.names = TRUE, pattern = ".gz")
+unzipp <- map(
+  .x = files_zip,
+  .f = GEOquery::gunzip
+)
+```
+
+In these first few steps we have: Downloaded supp_files and data about the experiment and unpacked these files. The next steps will be making sure the data is ready for data-analysis.
+
+### Make data ready for SummarizedExperiment and DESeq2
+
+####Genarating a summarized experiment for (CSV)
+
+The first steps in making a summarized experiment are getting the phenodata and metadata.
+Before we do that we first check if we still have the correct data selected. 
+The glimpse(datasets) should give the same output as your selected experiment (params geo_dataset) in this case that is GSE150646.
+
+After this quick check we want to know how to get to our data and make this easier. We see that that the data is saved in a folder inside a folder. To get to the data we need to do the same function twice, that’s why we called the first one 'pre'. Now we can easily ge our data with gse_csv.
+
+
+```{r prepare for SE}
+#We look into the datasets to check if we have selected the experiments we want to work with. 
+glimpse(datasets)
+glimpse(data)
+#To get to the data we need to do the same function twice, thats why we called the first one 'pre'
+pre_gse_csv <- data[[1]]
+gse_csv <- pre_gse_csv[[1]]
+glimpse(gse_csv)
+```
+
+
+Now we know that we’ve the correct data and can easily access them we’ll make the phenodata and metadata. We only need 2 functions to do this, pData and experimentData.
+```{r pheno and meta data begrijp niet waarom dit perse in tibble moet}
+#obtaining phenotypic data. contains all the info regarding each sample. #werkt niet
+phenodata_csv <- pData(gse_csv) # %>% as_tibble()
+class(phenodata_csv)
+#metadata maken en controleren of dit klopt
+metadata_csv <- experimentData(gse_csv)
+class(metadata_csv)
+```
+
+Now we need to “clean up” the phenodata a little bit before we can continue making a summarizedExperiment. When we look at the phenodata (with head) we see some weird names like “characteristics_ch1.1” and “characteristics_ch1.2”, these are the variables of the experiments. When you read “characteristics_ch1.1” you’ve no clue what the experiment is about, so you can change the name (for example) to gender/dev_stage/genotype etc. You can change the names with the params data1 and data2 at the start of this document. The place of “characteristics_ch1.1” can change from experiment to experiment, we haven’t find a way to automate this yet.
+```{r}
+#To look at what columm (number) the characteristics are, this can change per research, we haven't automated this yet.
+names(phenodata_csv)
+# Het benoemen van experimentele waarde
+colnames(phenodata_csv)[11] <- "dev_stage"
+colnames(phenodata_csv)[12] <- "genotype"
+names(phenodata_csv)
+```
+
+Further change of the phnodata, needed to make Summarized Experiment.
+```{r}
+#
+phenodata_csv <- phenodata_csv[2:41]
+samplenames_csv<- phenodata_csv[1]
+```
+
+Now we can load in the CSV_file, you’ll see the first few counts inside the file. also check if the data file is a “data.frame.
+
+```{r doet het niet}
+#Load the raw data from the csv data
+load_csv_data <- list.files(path = "GSE150646", full.names = TRUE, pattern = ".csv")
+csv_data <- read.csv(load_csv_data)
+#the first few counts of the raw data
+head(csv_data)
+#Check if the csv_data is a data.frame
+class(csv_data)
+```
+
+
+In raw_counts_csv_data we load in the raw counts of the csv file, minus the first column because these are names of the samples. Also note that it can be more or less columns in different documents. In the next step we change the name of the columns to make them more understandable. The last step is to change the data.frame into a data.matrix for SummarizedExperiment.
+```{r werkt ook niet}
+## In het volgende stukje willen we dat de namen goed komen te staan, je ziet eerst dat het rommelig is en daarna hebben ze GSM nummers
+#Laat alleen de raw counts over
+raw_counts_csv_data <- csv_data[2:21]
+head(raw_counts_csv_data)
+    ##make rowdata_csv waar is dit voor????????
+  rowdata_csv_data <- raw_counts_csv_data$`Gene symbol`
+#Kan ik de raw_counts_csv_data gebruiken om colnames te maken test
+colnames(raw_counts_csv_data) <-samplenames_csv[[1]]
+head(raw_counts_csv_data)
+#maak er een matrix van, weet niet waarom
+raw_counts_csv_data_matrix <- data.matrix(raw_counts_csv_data)
+    ## wat doet dit???????? 
+    ##rownames(raw_counts_csv_data_matrix) <- rowdata_csv_data
+```
+
+
+
+#### SummarizedExperiment
+
+SummarizedExperiment is used for organising data. This package saves rectangular matrices from experimental results. The rows represent the characteristics of interest, typically genes and transcripts. The columns stand for the samples. ColData consits of samples and metadata. Metadata is data about data, so ColData contains extra information about the samples. 
+
+Here we will put a character factor in a word. The word now consits of the organised data of the raw sample data coming from the dataset. 
+```{r}
+se_csv_data <- SummarizedExperiment(assays = raw_counts_csv_data_matrix,
+                     rowData = rowdata_csv_data,
+                     colData = phenodata_csv)
+```
+
+Here we will ad the metadata manually because the SummarizedExperiment won't accept it otherwise. The $ function extracts elements from a named list, by heading. 
+```{r}
+metadata(se_csv_data)$metadata <- metadata 
+```
+
+With the code below we will be able to inspect the SummarizedExperiment. The code "head" will make it possible to view the first part of the data frame. 
+```{r}
+se_csv_data
+head(assay(se_csv_data))
+```
+
+
+#### iSEE
+
+This code creates an interactive Shiny-based graphical user interface. This can be used to explore the stored data in the objects of SummarizedExperiment. This includes the row- and column-level metadata. 
+```{r}
+#iSEE test
+se_csv_iSEE <- se_csv_data
+iSEE(se_csv_iSEE)
+```
+
+
+### DESeq2 analysis
+
+DESeq2 is a {package} that will be used to detect the dfference between genes and to visualize the data. The raw count data, so the raw samples, will be used as input. 
+
+The code below still has to be seperated for now it doesn't work proprely with the parameters. We are looking into methods to solve this issue. This function still needs to be manually changed with processing every new dataset. The non-working code is turned off. With this function the DESeq2 dataset will be created. 
+```{r}
+#condition <- (get(params$data1, params$data2))
+#ddsSE_csv_data <- DESeq2::DESeqDataSet(se_csv_data, design = formula(~{{params$data1}}, {{params$data2}}))
+ddsSE_csv_data <- DESeq2::DESeqDataSet(se_csv_data, design = formula(~dev_stage, genotype))
+```
+
+
+The function rowSums returns the sums of each row in the data set. The counts function will quickly count the unique values of more variables. 
+
+In the code chunck below the sums of the rows of the unique values of more variables in the DESeq2 data set are calculated. The calculated rows and the already calculated DESeq2 dataset are put in the word ddsSE_csv_data. 
+
+```{r}
+keep <- rowSums(counts(ddsSE_csv_data)) >= 10
+ddsSE_csv_data <- ddsSE_csv_data[keep,]
+```
+
+Below the differntial expression analysis is implemented.
+```{r}
+ddsDE_csv_data <- DESeq(ddsSE_csv_data)
+```
+
+Here the results of the analysis are transferred into the word res_csv_data. 
+```{r}
+res_csv_data <- results(ddsDE_csv_data)
+```
+
+This code will show the top genes. 
+```{r}
+res_csv_data[order(res_csv_data$padj), ] %>% head
+```
+
+The genes will be stored in a top 5 list for later use in the sequence alignment. 
+```{r}
+top5genes <- rownames(res_csv_data[order(res_csv_data$padj), ])[1:5]
+```
+
+Fold change is a measure describing how much a quantity changes between an original and a subsequent measurement.
+
+The log fold change will be calculated and the resultNames will be put into the LFC function. 
+```{r}
+resultsNames(ddsDE_csv_data)
+```
+
+We also had some problems with automating the code below, this is still a work in progress. A Log 2 fold change is apllied. 
+```{r}
+resLFC_csv_data <- lfcShrink(ddsDE_csv_data, 
+                             coef = "dev_stage_age..5.months_vs_age..12.months"     )                       
+#coef="genotype_genotype..wildtype_vs_genotype..transgene.overexpressing.human.SNCA", type="apeglm")
+```
+
+### The visualization of the dataset 
+
+The code below will plot a histogram, this histogram will show the distribution of p-values. 
+```{r}
+ggplot(as(res_csv_data, "data.frame"), aes(x = pvalue)) +
+  geom_histogram()
+```
+
+This code will create a volcano plot, a type of scatterplot, that will help by quickly identifying changes. 
+```{r}
+DESeq2::plotMA(resLFC_csv_data, ylim=c(-2,2))
+```
+
+Here a Principal Component Analysis (PCA) is created, a PCA is used to observe outliers, jumps, clusters and trends. 
+```{r}
+ddsDE_rlog_csv_data <- ddsDE_csv_data %>%
+  rlogTransformation() 
+ddsDE_rlog_csv_data %>%
+  DESeq2::plotPCA(intgroup = c("dev_stage" , "genotype")) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "red") +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "red")
+```
+
+The code below creates a heatmap, this shows the extent of a phenomenon of the top 20 of up and down regulated genes as colour in two dimensions. 
+```{r}
+matrix_results_csv <- assay(ddsDE_rlog_csv_data)
+ind <- matrix_results_csv %>%
+  rowMeans() %>%
+  order(decreasing = TRUE) 
+top20 <- matrix_results_csv[ind[1:20],]
+annot_df <- as.data.frame(colData(ddsDE_csv_data)[,c("dev_stage" , "genotype")])
+heatmap <- pheatmap(top20,
+                    scale = "row", 
+                    annotation_col = annot_df)
+heatmap
+```
+
+
+## Our functions
+
+al onze funties laten zien
+
+## Shiny gebeure
+hier gaan we het hebben over shiny
